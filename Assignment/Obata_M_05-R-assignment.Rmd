@@ -1,0 +1,421 @@
+---
+title: "R Assignment 5"
+author: "Marina Obata"
+due date: "29.04.2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(FactoMineR)
+library(knitr)
+library(corrplot)
+library(factoextra)
+library(ggforce)
+library(haven)
+library(ggpubr)
+```
+
+```{r read the data into R studio, include=FALSE}
+df_global_origin <- read_rds("Data/df_global_origin.rds")
+```
+## About the selected data (TIMMS 2015)
+
+    ASG: Merged fourth grade student background data files for SGP (Singapore), HRV (Croatia) and Kuwait (KWT)
+    ASH: Merged fourth grade home and student background data files for SGP (Singapore), HRV (Croatia) and Kuwait (KWT)
+
+    Singapore is chosen as a country which had the highest test score of math, Croatia is chosen as a middle scored country, Kuwait is chosem as a lowest scored country.
+
+    Variables which are chosen in order to describe the scores are "Math score", "Sicence score", "Math reasoning" and "Science reasoning".
+    Variables which chosen in order to see the students' motivation and attitude to learn are "Liking Math", "Liking Science" and "Teacher explians good". 
+    Variables chosen to see the environmemt of learning out of the school are "Resources to learn at home", "Parents' attitude for learning" and "Extra studing for Math". 
+
+```{r selection of variables, include=FALSE}
+## Selection and description of variables for further analysis
+
+df_sgp <-
+    df_global_origin %>%
+    filter(IDCNTRY == 702) %>%
+    select(
+        math_score = ASMMAT01,
+        math_reasoning = ASMREA01,
+        science_score = ASSSCI01,
+        science_reasoning = ASSREA01,
+        like_math = ASBGSLM,
+        like_science = ASBGSLS, 
+        teacher_egood = ASBM02F,
+        home_resource = home_resource,
+        parent_atitude = parent_atitude,
+        extra_math = extra_math
+    ) %>%
+    mutate_all(as_factor) %>%
+    mutate(
+        math_score = as.numeric(math_score),
+        math_reasoning = as.numeric(math_reasoning),
+        science_score = as.numeric(science_score),
+        science_reasoning = as.numeric(science_reasoning),
+        like_math = as.numeric(like_math),
+        like_science = as.numeric(like_science),
+        home_resource = as.numeric(home_resource),
+        parent_atitude = as.numeric(parent_atitude),
+        country = "sgp"
+    )
+
+df_hrv <-
+    df_global_origin %>%
+    filter(IDCNTRY == 191) %>%
+    select(
+        math_score = ASMMAT01,
+        math_reasoning = ASMREA01,
+        science_score = ASSSCI01,
+        science_reasoning = ASSREA01,
+        like_math = ASBGSLM,
+        like_science = ASBGSLS, 
+        teacher_egood = ASBM02F,
+        home_resource_c = home_resource_c,
+        parent_atitude_c = parent_atitude_c,
+        extra_math_c = extra_math_c
+    ) %>%
+    mutate_all(as_factor) %>%
+    mutate(
+        math_score = as.numeric(math_score),
+        math_reasoning = as.numeric(math_reasoning),
+        science_score = as.numeric(science_score),
+        science_reasoning = as.numeric(science_reasoning),
+        like_math = as.numeric(like_math),
+        like_science = as.numeric(like_science),
+        home_resource_c = as.numeric(home_resource_c),
+        parent_atitude_c = as.numeric(parent_atitude_c),
+        country = "hrv"
+    )
+
+df_kwt <-
+    df_global_origin %>%
+    filter(IDCNTRY == 414) %>%
+    select(
+        math_score = ASMMAT01,
+        math_reasoning = ASMREA01,
+        science_score = ASSSCI01,
+        science_reasoning = ASSREA01,
+        like_math = ASBGSLM,
+        like_science = ASBGSLS, 
+        teacher_egood = ASBM02F,
+        home_resource_k = home_resource_k,
+        parent_atitude_k = parent_atitude_k,
+        extra_math_k = extra_math_k
+    ) %>%
+    mutate_all(as_factor) %>%
+    mutate(
+        math_score = as.numeric(math_score),
+        math_reasoning = as.numeric(math_reasoning),
+        science_score = as.numeric(science_score),
+        science_reasoning = as.numeric(science_reasoning),
+        like_math = as.numeric(like_math),
+        like_science = as.numeric(like_science),
+        home_resource_k = as.numeric(home_resource_k),
+        parent_atitude_k = as.numeric(parent_atitude_k),
+        country = "kwt"
+    )
+
+df_global <-
+    df_sgp %>%
+    bind_rows(df_hrv) %>% bind_rows(df_kwt)
+
+```
+
+```{r data to be used }
+df_sgp %>% slice(1:10) %>% kable()
+df_hrv %>% slice(1:10) %>% kable()
+df_kwt %>% slice(1:10) %>% kable()
+```
+
+## Exploratory data analysis
+
+```{r pressure}
+# Quick plots
+gghisto <- ggplot(data = df_global) +
+    geom_histogram(
+        mapping = aes(
+            x = math_score,
+            fill = country,
+        ),
+        colour = "gray",
+        bins = 50
+    )
+
+gghisto_sci <- ggplot(data = df_global) +
+    geom_histogram(
+        mapping = aes(
+            x = science_score,
+            fill = country,
+        ),
+        colour = "gray",
+        bins = 50
+    )
+
+ggarrange(gghisto, gghisto_sci + rremove("x.text"), 
+          labels = c("score of math", "score of science"),
+          ncol = 2)
+```
+
+    The histogram of math scores and science scores of those three countries showed the simililar tendency.
+    Singapore has wider distribution of scores compared to other two countries, distributing almost equally from the lowest to the highest, it is an abnormal way to distribute for the exam scores. 
+    The students in Kuwait has distribution of scores mainly between 0 to 3500, the students in Croatia has distribution from 0 to 4000, it seems that the students scored from 3500 to 4000 are making difference from Kuwait and ranking better as a result.  
+
+```{r see the difference regarding extra studies}
+point_sgp <- ggplot(data = df_sgp) +
+    geom_point(
+        mapping = aes(
+            x = science_score,
+            y = math_score
+        )
+    ) +
+    facet_wrap(~extra_math)
+
+point_hrv <- ggplot(data = df_hrv) +
+    geom_point(
+        mapping = aes(
+            x = science_score,
+            y = math_score
+        )
+    ) +
+    facet_wrap(~extra_math_c)
+
+point_kwt <- ggplot(data = df_kwt) +
+    geom_point(
+        mapping = aes(
+            x = science_score,
+            y = math_score
+        )
+    ) +
+    facet_wrap(~extra_math_k)
+
+ggarrange(point_sgp, point_hrv, point_kwt + rremove("x.text"), 
+          labels = c("Singapore", "Croatia", "Kwait"),
+          ncol = 2, nrow = 2)
+```
+
+The categories of the variable "Extrastudies_math" [1: Did not attend; 2: Less than 4 months; 3: 4-8 months; 4: More than 8 months]
+
+    From the result, it could have seen that in Singapore and Kuwait, the extra study culture seems penetrating, however, going to extra studies is not necessarily related to the higher scores.
+    On the other hand, in Croatia, the extra studying culture seems not existing generally, rather than that, since a few lower scored student are seen as taking extra leasson, it might be considered as extra support for the students who need it.
+    From the result the hypothesis of the relation of extra study and higher score is rejected, however, since extra studying takes time to get the result on the exam, longitudinal study is needed to verify the hypothesis. 
+
+```{r format the data for plotting, include=FALSE}
+df_sgp_plot <-
+    df_sgp %>%
+    select_if(is.numeric) %>%
+    mutate(like_math = replace_na(as.character(like_math),"Missing"),
+           like_science = replace_na(as.character(like_math),"Missing"),
+           home_resource = replace_na(as.character(home_resource),"Missing"),
+           parent_atitude = replace_na(as.character(parent_atitude),"Missing")
+    )%>%
+    mutate(like_math = as.numeric(like_math),
+           like_science = as.numeric(like_science),
+           home_resource = as.numeric(home_resource),
+           parent_atitude = as.numeric(parent_atitude)
+    )
+
+df_hrv_plot <-
+    df_hrv %>%
+    select_if(is.numeric) %>%
+    mutate(like_math = replace_na(as.character(like_math),"Missing"),
+           like_science = replace_na(as.character(like_math),"Missing"),
+           home_resource = replace_na(as.character(home_resource_c),"Missing"),
+           parent_atitude = replace_na(as.character(parent_atitude_c),"Missing")
+    )%>%
+    mutate(like_math = as.numeric(like_math),
+           like_science = as.numeric(like_science),
+           home_resource = as.numeric(home_resource_c),
+           parent_atitude = as.numeric(parent_atitude_c)
+    )
+
+df_kwt_plot <-
+    df_kwt %>%
+    select_if(is.numeric) %>%
+    mutate(like_math = replace_na(as.character(like_math),"Missing"),
+           like_science = replace_na(as.character(like_math),"Missing"),
+           home_resource = replace_na(as.character(home_resource_k),"Missing"),
+           parent_atitude = replace_na(as.character(parent_atitude_k),"Missing")
+    )%>%
+    mutate(like_math = as.numeric(like_math),
+           like_science = as.numeric(like_science),
+           home_resource = as.numeric(home_resource_k),
+           parent_atitude = as.numeric(parent_atitude_k)
+    )
+
+
+```
+
+
+## Calculate and plot correlation matrix
+
+```{r Correlation matrix}
+matrix_correlation_sgp <- df_sgp_plot %>% cor(use = "complete.obs")
+corrplot(matrix_correlation_sgp)
+matrix_correlation_hrv <- select_if(df_hrv, is.numeric) %>% cor(use = "complete.obs")
+corrplot(matrix_correlation_hrv)
+matrix_correlation_kwt <- select_if(df_kwt, is.numeric) %>% cor(use = "complete.obs")
+corrplot(matrix_correlation_kwt)
+```
+   
+    There is a strong positive association between the variables of math score and math reasoning, as well as science score and science reasoning. Thus, we can see that if the students is good at math, they tend to be also good at science, tend to have higher scores for reasoning as well. This tendency can be seen for all those three countries. As a remark, in Singapore and Croatia, there is a positive relations between home learning resources and higher score on the tests. But for Kuwait, the relation was not that strong. 
+```{r Search for eigenvalues, echo=FALSE}
+
+eigen(matrix_correlation_sgp)$values
+eigen(matrix_correlation_hrv)$values
+eigen(matrix_correlation_kwt)$values
+
+```
+
+    There are 8 eigenvalues for all the three country's cases.
+
+## Perform PCA
+
+```{r Perform PCA, fig.show='hide'}
+# Calculate PCA
+res_pca_sgp <- PCA(df_sgp_plot, quali.sup = 8, graph = TRUE)
+res_pca_hrv <- PCA(df_hrv_plot, quali.sup = 8, graph = TRUE)
+res_pca_kwt <- PCA(df_kwt_plot, quali.sup = 8, graph = TRUE)
+
+# Take a look at the eigenvalues
+get_eig(res_pca_sgp)
+get_eig(res_pca_hrv)
+get_eig(res_pca_kwt)
+```
+
+```{r Coordinates and Contribution of variables, include=FALSE}
+va_sgp <- get_pca_var(res_pca_sgp)
+va_sgp
+
+va_hrv <- get_pca_var(res_pca_hrv)
+va_hrv
+
+va_kwt <- get_pca_var(res_pca_kwt)
+va_sgp
+
+head(va_sgp$coord)
+head(va_sgp$contrib)
+
+head(va_hrv$coord)
+head(va_hrv$contrib)
+
+head(va_kwt$coord)
+head(va_kwt$contrib)
+
+
+```
+
+## Check how many dimensions/axes need to be  interpreted
+
+```{r Check dimentions of the PCA}
+# Scree plot
+fviz_eig(res_pca_sgp)
+fviz_eig(res_pca_hrv)
+fviz_eig(res_pca_kwt)
+
+```
+
+    There are 7 dimensions according to the result of scree plot for Singapore, there is a bend at dimension 3, 91.26% are explained till dimension 3. 
+    There are 9 dimention for Croatia, however, a clear bend is not seen, 78.48% has been explained till dimension 3. 
+    Also, there are 9 dimentions for Kuwait, as well as Croatia, the clear bend is not observed, 77.20% has been exmpalined till dimension 3.
+
+## Interpretation of the PCA variables graph
+
+```{r PCA variables graph with factextra}
+var_sgp <- fviz_pca_var(res_pca_sgp, col.var = "contrib", repel = TRUE)
+var_hrv <- fviz_pca_var(res_pca_hrv, col.var = "contrib", repel = TRUE)
+var_kwt <- fviz_pca_var(res_pca_kwt, col.var = "contrib", repel = TRUE)
+
+var_sgp
+var_hrv
+var_kwt
+```
+
+    As for the students in Singapore, the variable liking_math and science are highly correlated, the variblaes math reasoning, math score, home resource, science reasoning and science score are also correlated to each other. Among them, the set of the variables [math reasoning and math score], [home resoures, math score, science reasoning and science score] are highly correlated. In the graph, the variables which had high contribution value are, like science and like math. Thus, it is seen that home resources are also important for students' test scores in Singapore.
+    As for Croatia, the result was similar as Singapore, the particular thing was that, the variable parents' atitude was not related to any other variables, had lowest contribution value for these dimension. Thus, it can see that in Croatia, the parents' atitude is not that related to the scores of students.
+    As for Kuwait, the variables liking math and science are highly correlated, varaibles math score, reasoning, science score, reasoning are also highly correlated. Home resources are not that much correlated with test scores as Singapore, however, the attitude of parents seemed slightly correlated with the students' test scores in this dimension. 
+    
+## Interpretation of the PCA individuals graph
+```{r Extract the results for individuals, include=FALSE}
+ind_sgp <- get_pca_ind(res_pca_sgp)
+ind_sgp
+
+ind_hrv <- get_pca_ind(res_pca_hrv)
+ind_hrv
+
+ind_kwt <- get_pca_ind(res_pca_kwt)
+ind_sgp
+```
+```{r Coordinates of individuals}
+head(ind_sgp$coord)
+head(ind_hrv$coord)
+head(ind_kwt$coord)
+```
+
+
+```{r Create PCA ggplot}
+indg_sgp <- fviz_pca_ind(res_pca_sgp, col.ind = "cos2")
+indg_hrv <- fviz_pca_ind(res_pca_hrv, col.ind = "cos2")
+indg_kwt <- fviz_pca_ind(res_pca_kwt, col.ind = "cos2")
+
+indg_sgp
+indg_hrv
+indg_kwt
+```
+  
+    According to the result of PCA individual analysis, the country which had larger distribution in both of dimension 1 and 2 was Kuwait. Singapore and Croatia had similar way of distribution. Singapore had the largest number of individuals with higher contribution value for these dimensions. As for Singapore, the cloud of points is shaped like rectangle with angle of right-down, there are more students who are in the positive side of dimension 2, negative side of dimension 1 and the students who are in positive side of dimention 1 and negative side of dimention 2. 
+    In total, the tendency of students in Singapore is well explained by dimension 1 and 2, for Kuwait, it is less explained. Thus, it is nessesary to consider multi-dimensionally for the students in Kuwait. 
+ 
+
+```{r biplot of individuals and variables}
+
+bi_sgp <- fviz_pca_biplot(res_pca_sgp)
+bi_hrv <- fviz_pca_biplot(res_pca_hrv)
+bi_kwt <- fviz_pca_biplot(res_pca_kwt)
+
+bi_sgp
+bi_hrv
+bi_kwt
+```
+
+    In order to see the tendency of individuals in relative to variables, bi-plot is described, it seems that the dimension 1 is more influenced by the variables showing the scores of students, dimension 2 is affected by the varaibles of liking of the subjects. Interestingly, in case of Kuwait, there are some outliers in the direction of home sources, it can see that some students are especially riched with home sources in Kuwait. 
+
+
+## PCA individual analysis grouped by country
+
+```{r PCA analysis of individuals with countrues(data preparation), include=FALSE}
+df_global_plot <-
+    df_global %>%
+    select(
+        math_score,
+        math_reasoning,
+        science_score,
+        science_reasoning,
+        like_math,
+        like_science, 
+        country
+    ) %>%
+    mutate(country = as_factor(country)
+    )
+
+res_pca_global <- PCA(df_global_plot, quali.sup = 7, graph = FALSE)
+res_pca_global$eig
+
+```
+
+```{r PCA individual analysis grouped by country}
+ind_global <- fviz_pca_biplot(res_pca_global, 
+                col.ind = df_global_plot$country, palette = "jco",
+                addEllipses = TRUE, label = "var",
+                col.var = "blue", repeal = TRUE, 
+                legend.title = "country")
+            
+ind_global    
+
+```
+
+    As a result of individual analysis grouped by country, we can see that the students in Kuwait is more distributed by the variables of liking math and sciences, students in Singapore is distributed by test scores, the students in Croatia is in the middle. It is similar as the result of histogram, which showed that the students in Singapore has larger differences of scores between students. However, we could see that the differences towards liking of the subject is not that large in Singapore, it has more difference in Kuwait and Croatia.
+

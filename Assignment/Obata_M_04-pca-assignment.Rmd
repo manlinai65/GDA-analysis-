@@ -1,0 +1,326 @@
+---
+title: "PCA Assignment"
+author: "Marina Obata"
+date: "01.04.2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(FactoMineR)
+library(knitr)
+library(corrplot)
+library(factoextra)
+library(ggforce)
+```
+
+## About the data
+
+A data frame with 41 rows and 13 columns: the first ten columns corresponds to the performance of the athletes for the 10 events of the decathlon. The columns 11 and 12 correspond respectively to the rank and the points obtained. The last column is a categorical variable corresponding to the sporting event (2004 Olympic Game or 2004 Decastar)
+
+```{r origin-data}
+# Load decathlon data provided by FactoMineR package.
+data(decathlon) 
+# Transform decathlon as tibble.
+df_decathlon <- decathlon %>% as_tibble()
+# Info: You may want improve the weird column names!
+
+# A better way of viewing tibbles in R Markdown: kable()
+df_decathlon %>% slice(1:10) %>% kable()
+```
+
+## Exploratory data analysis
+
+```{r pressure}
+# Quick plots
+ggplot(df_decathlon) +
+    geom_density(aes(`100m`), fill = "black")
+
+# Descriptive summaries
+#M This graph follows nearly normal distribution, the median is around 10.9 second. 
+
+# Quick desc. stats
+df_decathlon %>% summarise_at(1:10, list(mean = mean, sd = sd))
+
+# Apply quick desc. stats functions on ALL numerical columns
+df_decathlon %>%
+    summarise_if(is.numeric, list(mean = mean, sd = sd)) 
+
+df_decathlon
+```
+
+## Selection and description of variables for further analysis
+
+```{r data selection, include=FALSE}
+colnames(df_decathlon)
+#M I select the total scores and 100m, Long jump, Discus and 1500m to see what kind of strength is most likely related to total higher score. 
+#M Focused to 100m(short run), Long jump(jumping power), Discus (throwing power) and 1500m (long run)
+
+df_focused  <-
+    df_decathlon %>%
+        #select 5 variables 
+        select(
+            S_run_s = '100m',
+            L_jump_s = Long.jump,
+            Discus_s = Discus,
+            L_run_s = '1500m', 
+            total_p = Points
+        )  
+        
+df_focused
+```
+
+## Calculate and plot correlation matrix
+
+```{r Correlation matrix}
+matrix_correlation <- df_focused %>% cor()
+corrplot(matrix_correlation)
+
+#M There is a strong negatice association between the time of short run and total point as well as long jump. Whereas, long jump has strong positive association with total score. 
+
+# Search for eigenvalues 
+eigen(matrix_correlation)$values
+#M There are 5 eigenvalues 
+
+```
+
+## Perform PCA
+
+```{r Perform PCA}
+# Calculate PCA
+res_pca_d <- PCA(df_focused, quali.sup = 5, graph = FALSE)
+
+# Take a look at the eigenvalues
+res_pca_d$eig
+#M comp 1  1.74 (Var 43.47), comp 2  1.17 (var 29.23), comp 3  0.70 (var17.44),
+#M comp 4  0.40 (var 9.85)
+
+```
+
+## Check how many dimensions/axes we have to interpret
+
+```{r Check dimentions of the PCA}
+# Scree plot
+fviz_eig(res_pca_d)
+
+#M There are 4 dimentions according to the result of scree plot.
+```
+## Interpretation of the PCA variables graph
+
+```{r PCA variables graph with FactoMineR}
+## Interpretation of the PCA variables graph
+
+# Plot only the graph of selected variables with FactoMineR function
+plot_pca_var <- plot(res_pca_d, axes = c(1,2), choix = "var")
+plot_pca_var
+
+#M As it has been observed in correlation matrix, variable long jump and short run locates in the opposite side. From these dimentions, variable long run and discus seems heading to similar direction.
+```
+
+
+```{r PCA variables graph with all the varaibles}
+# Create PCA variables graph with all the numerical variables 
+
+res_pca_1 <- PCA(df_decathlon, quali.sup = 13, quanti.sup = 11:12, graph = FALSE)
+plot(res_pca_1, choix = "var")
+
+#M As for the graph with all the variables of PCA, the similar competition looks heading to the closer direction, for example, the variables of 100m run, 100m hurdle and 400m. Also, the variables Discus and Shot plot. It makes sense from the norms. Varaibles 1500m and pole vault and long jump looks having own directions. As we already saw in martix correlation, the higher points in varaibles long jump, shot put and high jump, which are heading to right side of the circle seems having higher total points in the end. 
+
+```
+
+
+```{r PCA variables graph with selected variables,include=FALSE}
+# Focus on some variables and correlations (FactoMineR function)
+plot(
+    res_pca_d,
+    choix = "var",
+    select = c("S_run_s", "L_jump_s")
+)
+
+
+```
+
+## Interpretation of the PCA individuals graph
+```{r Graph of PCA individual graph with FactoMineR}
+# Plot only the graph of individuals with FactoMineR functiona
+plot_pca_ind_12 <- plot(res_pca_d, axes = c(1,2), choix = "ind")
+plot_pca_ind_12
+
+#M From the PCA individual graph of dimention 1 and 2, athlete No. 39, 41 also, 15,16 are distanced. 
+#M Dimention 1 is more spreaded around in a positive direction. 
+
+```
+```{r Create PCA ggplot}
+res_pca_d$ind$coord %>% as_tibble() %>% rownames_to_column()
+ggplot(res_pca_d$ind$coord %>% as_tibble() %>% rownames_to_column()) +
+    geom_point(aes(Dim.1, Dim.3)) +
+    geom_label(aes(Dim.1, Dim.3, label = rowname))
+
+#M From the PCA individual graph of dimention 1 and 3, the athlete No. 41 and 39 seems no more distanced from these dimentions. 
+#M No. 15,16 are still isolated. Also, this time, No.9 is distanced. The distribution of overall plots are not much changed from the last graph. 
+
+```
+ 
+# more details about the individuals of this PCA result
+
+```{r The individuals with high contributions, include=FALSE}
+df_pca_coord_d <-
+    res_pca_d$ind$coord %>%
+    as_tibble()
+df_pca_coord_d %>% colnames()
+
+# Extract the contributions of the points
+df_pca_contrib_d <-
+    res_pca_d$ind$contrib %>%
+    as_tibble()
+
+df_pca_contrib_d 
+
+#M There are more varaibles showing the contribution in Dimention 3 and 4
+```
+
+```{r Create a data set for plotting, include=FALSE}
+df_pca_plot <-
+    df_pca_coord_d %>%
+    # coordinates of dimension 1 & 2
+    select(
+        dim_1_coord_d = Dim.1,
+        dim_2_coord_d = Dim.2
+        ) %>%
+    bind_cols(
+        df_pca_contrib_d
+    ) %>%
+    select(
+        dim_1_coord_d,
+        dim_2_coord_d,
+        dim_1_contrib_d = Dim.1,
+        dim_2_contrib_d = Dim.2
+    ) 
+    
+    #%>% 
+    # Try to select high contributing individuals to the whole pane.
+    #filter(
+        #dim_1_contrib > 2
+    #)
+df_pca_plot
+```
+
+```{r PCA Individual variables graph Dim 1 and Dim2}
+plot_pca_ind1 <-
+    ggplot(df_pca_plot, aes(dim_1_coord_d, dim_2_coord_d)) +
+    geom_point(alpha = 0.5) +
+    stat_ellipse() +
+    geom_hline(yintercept = 0) +
+    geom_vline(xintercept = 0) +
+    theme_classic() +
+    # (In this case dimension 1).
+    xlab("Dimention 1 score") +
+    ggforce::geom_mark_ellipse(
+        data = df_pca_plot %>% filter(dim_2_coord_d > 2.5), 
+        aes(
+            label = str_glue("Outliers"),
+            description = "Only dimension 2"
+        )
+    )
+plot_pca_ind1
+
+#M According to the plot PCA of individual data of Dimention 1 and 2, it is distributed relatively closer, mostly in the large circle, but it has more spread out in the direction of dimention 1, thus, these outliers from dimention 2 looks distanced. More number of observations are found in the negatove direction of dimention 1 in this plot.  
+```
+
+
+### Differentiated analysis of individuals (integration of a categorical variable, not mandatory)
+```{r Differentiated analysis of individuals(data preparation), include=FALSE}
+df_focused_2  <-
+    df_decathlon %>%
+        #select 5 variables 
+        select(
+            S_run_s = '100m',
+            M_jump_s = '400m',
+            Hurdle = '110m.hurdle',
+            L_run_s = '1500m', 
+            total_p = Points,
+            Comp = Competition
+        ) %>%
+    mutate(Comp = as_factor(Comp)
+    ) 
+    
+df_focused_2
+
+res_pca_2 <- PCA(df_focused_2, quali.sup = 6, graph = FALSE)
+res_pca_2$eig
+
+df_pca_coord_2 <-
+    res_pca_2$ind$coord %>%
+    as_tibble()
+df_pca_coord_2 %>% colnames()
+
+df_pca_contrib_2 <-
+    res_pca_2$ind$contrib %>%
+    as_tibble()
+
+df_pca_contrib_2
+
+df_pca_plot_ind2 <-
+    df_pca_coord_2 %>%
+    select(
+        dim_1_coord_2 = Dim.1,
+        dim_2_coord_2 = Dim.2
+        ) %>%
+    bind_cols(
+        df_pca_contrib_2
+        ) %>%
+    select(
+        dim_1_coord_2,
+        dim_2_coord_2,
+        dim_1_contrib_2 = Dim.1,
+        dim_2_contrib_2 = Dim.2
+        ) %>%
+    add_column(
+        Comp = df_focused_2$Comp
+    ) 
+
+df_pca_plot_ind2
+
+
+```
+
+
+```{r Differentiated analysis of individuals}
+plot_pca_ind_4 <-
+    ggplot(df_pca_plot_ind2, aes(dim_1_coord_2, dim_2_coord_2, colour = Comp)) +
+    geom_point(alpha = 1) +
+    stat_ellipse() +
+    geom_hline(yintercept = 0) +
+    geom_vline(xintercept = 0) +
+    theme_classic() +
+    # (In this case dimension 2).
+    xlab("Dimention 2 score") +
+    ggforce::geom_mark_ellipse(
+        data = df_pca_plot_ind2 %>% filter(dim_2_coord_2 > 2.5),
+        aes(
+            label = str_glue("Outliers from {Comp}"),
+            description = "Only dimension 2"
+        )
+    ) +
+    stat_ellipse() +
+    geom_hline(yintercept = 0) +
+    geom_vline (xintercept = 0) +
+    theme_minimal() +
+    xlab("Meta Score") +
+    ggforce::geom_mark_ellipse(
+        data = df_pca_plot_ind2 %>% filter(dim_1_coord_2 > 2.5),
+        aes(
+            label = str_glue("Outliers from {Comp}"),
+            description = "Only dimension 1"
+        )
+    )
+
+plot_pca_ind_4
+
+#M As a result of data visialization in terms of different competition type of Decaster abd Olympic Game regarding variables of 100m run, 110m hurdle run, 400m run and 1500m run, the result of olympic game is distributed more arong with dimention 1, the result of Decasetr seems distributed multidimentionally, in diagonal shape. There was a observed outlier in dimention 2 from Olympic game, two outliers in dimention 1 from both competitions. 
+
+```
+
+

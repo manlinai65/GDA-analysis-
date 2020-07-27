@@ -1,0 +1,510 @@
+---
+title: "R assignment 6 -MCA-"
+author: "Marina Obata"
+date: "6/05/2020"
+output: 
+  word_document: default
+  #html_document: default
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r set-up, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(FactoMineR)
+library(factoextra)
+library(dplyr)
+library(haven)
+```
+
+# *Assumption 1* 
+     
+  For the case of Germany, the differences on possession are assumed as not that large, therefore, there was not a obvious categories for axis 2. In this case, I would like to try with the variables indicating more psychological aspect.  
+
+```{r select data, include=FALSE}
+df_mca <- read_rds("Data/df_mca.rds")
+df_mca_selected <- select(df_mca,-c(4,5,6,7))
+```
+
+```{r setup, include=FALSE}
+extract_hight_ctr_cat <- function(axis, criterion) {
+    hight_ctr_cat <-
+        res_mca_selected_3$var$contrib %>%
+        as.data.frame() %>%
+        rownames_to_column() %>%
+        as_tibble() %>%
+        select(
+            category = rowname,
+            dim = str_glue("Dim {axis}")
+        ) %>%
+        filter(dim > criterion) %>%
+        pull(category)
+
+    hight_ctr_cat
+}
+
+modified_rates <- function(res_mca_selected_3) {
+  
+  Q <- ncol(res_mca_selected_3$call$X)
+  
+  seuil <- 1/Q
+  
+  e <- data.frame(res_mca_selected_3$eig)[[1]][data.frame(res_mca_selected_3$eig)[[1]] >= seuil]
+  
+  pseudo <- (Q/(Q - 1) * (e - seuil))^2
+  
+  mrate <- round(pseudo/sum(pseudo) * 100, 2)
+  
+  cum_mrate <- cumsum(mrate)
+
+  tibble(mod_rates = mrate, cum_mod_rates = cum_mrate)
+}
+```
+
+## Quick look on the Data
+
+```{r import-data}
+df_mca_selected %>% summary()
+```
+
+There are around 600-700 NAs for most of variables.
+
+## Choose active and passive variables and perform MCA
+
+```{r make mca-perform}
+res_mca_selected <- MCA(df_mca_selected, quali.sup = c(1:3), graph = FALSE)
+res_mca_selected
+```
+
+## Deal with missing values
+
+There are at least three possibilities: 
+1. Exclude all missing values.
+
+```{r NA 1mca-na}
+df_mca_selected %>% nrow()
+mca_omit <- df_mca_selected %>% na.omit()
+mca_omit %>% nrow()
+
+res_mca_2 <- MCA(df_mca_selected %>% na.omit(), quali.sup = c(1:3), graph = FALSE)
+
+fviz_mca_var(res_mca_2)
+```
+
+  3948 observations before omitting NAs, 2969 observations after omitting. There are around 1000 of gap in sample number.  
+    
+2. Perform a specific MCA and exclude only NA categories
+
+```{r NA 2 mca-perform}
+# Extract indicator matrix categories indices
+res_mca_selected$call$Xtot %>% colnames()
+
+res_mca_selected_3 <- MCA(df_mca_selected, quali.sup = c(1:3), graph = FALSE, excl = c(5, 10, 15, 20, 25, 30))
+
+fviz_mca_var(res_mca_selected_3)
+
+# Zoom in the MCA map
+fviz_mca_var(res_mca_selected_3) +
+    xlim(-1, 1) +
+    ylim(-1, 1)
+
+modified_rates(res_mca_selected_3)
+```
+
+3. Use imputation.
+```{r NA 3 mca-perform}
+library(missMDA)
+
+res_mca_impute <- imputeMCA(df_mca_selected)
+
+res_mca_impute$completeObs %>% summary()
+
+res_mca_impute <- 
+    MCA(
+        df_mca_selected, 
+        quali.sup = c(1:3), 
+        graph = FALSE, 
+        tab.disj = res_mca_impute$tab.disj
+    )
+
+modified_rates(res_mca_impute)
+
+fviz_mca_var(res_mca_impute) 
+```
+
+  From a quick look, not much difference between 3 ways.Since No.1 is taking a lot of observations out and No.3 removes the labels, I take No.2 which is just excluding the NA categories. 
+
+```{r MCA have a look}
+
+fviz_mca_ind(res_mca_selected_3)
+
+fviz_mca_biplot(res_mca_selected_3)
+
+```  
+
+Just a few students are disagreeing a lot for the opinion of teachers are explaining good. 
+
+4. Analyse NAs as own category
+
+## Optimise MCA results (deal with less responsive categories; specific MCA)
+
+```{r mca-specific, include=FALSE}
+library(forcats)
+```
+
+## Check eigenvalues
+
+```{r mca-eigen}
+fviz_eig(res_mca_selected_3)
+
+res_mca_selected_3$eig
+```
+
+The extent of the expalnation is relatively spreaded out by dimensions, it requires to calculate till demension 12 till it gets to 70% of variance. However, as a result of motive rate, it reaches to 98.55% of expalnation by dimension two, we will focus on 2 dimensions.
+
+## Start interpretation per axis
+
+In order to enable an interpretation that is as goal-oriented as possible,
+we calculate the baseline criterion and 
+focus only on the categories that make a particularly strong contribution.
+
+```{r mca-baseline-criterion}
+criterion <- 100/ncol(res_mca_selected_3$call$Xtot)
+criterion
+```
+
+ The value of criterion is 2.727.
+
+### Axis 1
+```{r run the sub function, include=FALSE}
+vec_ptype2.glue <- function(x, y, ...) UseMethod("vec_ptype2.glue", y)
+vec_ptype2.glue.character <- function(x, y, ...) x
+vec_ptype2.glue.default <- function(x, y, ...) vctrs::vec_default_ptype2(x, y)
+vec_ptype2.character.glue <- function(x, y, ...) y
+
+vec_cast.glue <- function(x, to, ...) UseMethod("vec_cast.glue")
+vec_cast.glue.character <- function(x, to, ...) glue::as_glue(x)
+vec_cast.character.glue <- function(x, to, ...) unclass(x)
+
+```
+
+```{r mca-axis-1}
+
+extract_hight_ctr_cat(1, criterion)
+
+fviz_mca_var(
+    res_mca_selected_3,
+    select.var = list(name = extract_hight_ctr_cat(1, criterion)),
+    repel = TRUE
+) +
+    xlab("Axis 1 (44.5 %, modif. rate Benzécri): good environment & positive motivation vs. worse environment & negative motivation")
+```
+
+  The result of MCA on variable categories shows that the student who agrees a lot for their teachers' good explanation and having proud for their school are also agreed a lot with enjoying science and math. There are not strong relations between school proud and how teachers explain good for the students who agrees a little and disagrees a little to each category. Moreover, the interesting thing to be observed was that the category of disagreeing a little for enjoying science and agreeing little for teacher explains good science are related relatively strong. Thus, it is assumed that in this sample, the teacher's level and schools level should be very good so that the students can really enjoy the classes. 
+
+
+### Axis 2
+
+```{r mca-axis-2}
+extract_hight_ctr_cat(2, criterion)
+
+# Our mysterios axis. What is it about?
+fviz_mca_var(
+    res_mca_selected_3,
+    select.var = list(name = extract_hight_ctr_cat(2, criterion-1)),
+    repel = TRUE
+) +
+    xlab("Axis 1 (44.5 %, modif. rate Benzécri): good teacher & school quality and positive motivation vs. worse teacher & school quality and negative motivation") +
+    ylab("Axis 2 (25.6%, modif. rate Benzécri): hurt by others often vs not often hurt ")
+```
+
+  In axis 2, the tendency has been observed that, the students who are hurt by others frequently answered as agreeing a lot for the question math is boring. However, between students who answered as rarely hurt, the extent of enjoying math/science was related to either agreeing a little or disagreeing a little. Given that, it can be observed that the students who hurt frequently is not enjoying the study at all.  
+
+## Analyse passive variables in depth
+
+```{r mca-passive}
+
+df_mca_selected %>% colnames()
+
+# Take a look at all passive varibles (active variables hidden)
+fviz_mca_var(
+    res_mca_selected_3,
+    invisible = "var"
+) +
+    xlim(-0.2, 0.4) +
+    ylim(-0.3, 1)
+
+# Take a look at the books at home passive variable (individuals plot)
+fviz_mca_ind(
+    res_mca_selected_3,
+    addEllipses = TRUE,
+    habillage = "books_home",
+    geom.ind = "point",
+    alpha.ind = 0.15
+) +
+    # Move right on with ggplot calls.
+    facet_wrap(~"books_home") +
+    coord_fixed()
+
+# Take a look at the language of students passive variable (individuals plot)
+fviz_mca_ind(
+    res_mca_selected_3,
+    addEllipses = TRUE,
+    habillage = "often_speak",
+    geom.ind = "point",
+    alpha.ind = 0.2
+) +
+    # Move right on with ggplot calls.
+    facet_wrap(~"often_speak") +
+    coord_fixed()
+```
+
+  As for the analysis on passive variables, the variable of number of books at home (0-10 books) had distribution towards diagonal way, where there are the categories of disagreeing a lot for teacher's good explanation on the right upper side. Thus, it can be assumed that the students who reads only a few books, in other words, not motivated much for studying tend to feel that the teacher's explanation is had. It can be assumed that the evaluation towards teacher could be related not only how good the teacher explains, but also the learning level of the students. 
+  The exactly same tendency could have been observed with the category of nerver speaking the language of the exam. Also, the category of sometimes speak the language in smaller extent. It makes sense that if the students do not speak often the language which is used in class, they cannot understand what the teacher is explaining. 
+  Moreover, as we could see that the students who never speak the language and reading 0-10 beeks are related, not knowing the language limits the access to the studying materials and the better understanding in the class.
+
+
+# *Assumption 2*
+
+  Since possession relates more in the countries where there are larger economic gaps between students. Thus, this time I took the data of student in Indonesia which showed relatively low GDP in the participating countries.  
+
+## Load Data
+
+```{r import-data 2, include=FALSE}
+df_idn <- read_spss("Data/ASGIDNM6.sav")
+# or 
+df_idn <- read_rds("Data/df_idn.rds")
+```
+
+```{r select data 2, include=FALSE}
+df_idn_selected <-
+    df_idn %>% 
+    select(
+        sex = ASBG01,
+        own_computer = ASBG05A,
+        own_internet = ASBG05E,
+        own_studyroom = ASBG05C,
+        own_game = ASBG05G,
+        own_mobile = ASBG05G,
+        safe_school = ASBG11B,
+        like_math = ASBM01E,
+        like_science = ASBS04E,
+        language = ASBG03
+    ) %>%
+    mutate_all(as_factor) %>%
+    as_tibble()
+
+```
+
+## Choose active and passive variables and perform MCA
+
+```{r mca-perform 2}
+res_mca_idn <- MCA(df_idn_selected, quali.sup = c(1:3), graph = FALSE)
+res_mca_idn
+```
+
+```{r set up function, include=FALSE}
+extract_hight_ctr_cat_idn <- function(axis, criterion) {
+    hight_ctr_cat <-
+        res_mca_idn_2$var$contrib %>%
+        as.data.frame() %>%
+        rownames_to_column() %>%
+        as_tibble() %>%
+        select(
+            category = rowname,
+            dim = str_glue("Dim {axis}")
+        ) %>%
+        filter(dim > criterion) %>%
+        pull(category)
+
+    hight_ctr_cat
+}
+
+modified_rates_idn <- function(res_mca_idn_2) {
+  
+  Q <- ncol(res_mca_idn_2$call$X)
+  
+  seuil <- 1/Q
+  
+  e <- data.frame(res_mca_idn_2$eig)[[1]][data.frame(res_mca_idn_2$eig)[[1]] >= seuil]
+  
+  pseudo <- (Q/(Q - 1) * (e - seuil))^2
+  
+  mrate <- round(pseudo/sum(pseudo) * 100, 2)
+  
+  cum_mrate <- cumsum(mrate)
+
+  tibble(mod_rates = mrate, cum_mod_rates = cum_mrate)
+}
+```
+
+## Deal with missing values
+
+1. Exclude all missing values.
+
+```{r mca-na 2}
+df_idn_selected %>% nrow()
+idn_omit <- df_idn_selected %>% na.omit()
+nrow(idn_omit)
+
+res_mca_idn_2 <- MCA(df_idn_selected %>% na.omit(), quali.sup = c(1:3), graph = FALSE)
+
+fviz_mca_var(res_mca_idn_2)
+
+modified_rates_idn(res_mca_idn_2)
+
+write_rds(res_mca_idn_2, path = "Data/res_mca_idn_2.rds")
+```
+
+4025 observations before omitting NAs, 3388 observations after omitting. There are 637 of gap in sample number.  
+
+2.Perform a specific MCA and exclude only NA categories.
+```{r mca-perform NA1 }
+# Extract indicator matrix categories indices
+res_mca_idn$call$Xtot %>% colnames()
+
+res_mca_idn_3 <- MCA(df_idn_selected, quali.sup = c(1:3), graph = FALSE, excl = c(3, 8, 13, 18, 26, 29))
+
+# Zoom in the MCA map
+fviz_mca_var(res_mca_idn_3) +
+    xlim(-1, 1) +
+    ylim(-1, 1)
+```
+
+3. Use imputation.
+```{r mca-perform NA3}
+library(missMDA)
+
+res_mca_i_impute <- imputeMCA(df_idn_selected)
+
+res_mca_i_impute$completeObs %>% summary()
+
+res_mca_i_impute <- 
+    MCA(
+        df_idn_selected, 
+        quali.sup = c(1:3), 
+        graph = FALSE, 
+        tab.disj = res_mca_i_impute$tab.disj
+    )
+
+modified_rates(res_mca_i_impute)
+
+fviz_mca_var(res_mca_i_impute) 
+```
+
+  No.1 and No.3 resulted similar shape. Since the number of missing samples is much smaller than the data of Germany, and for the convenience of interpretation, No.1 is applied to remove NAs. 
+```{r have a look more on MCA 2}
+fviz_mca_ind(res_mca_idn_2)
+
+fviz_mca_biplot(res_mca_idn_2)
+
+```
+
+The observations are clearly divided by the categories of owning or not owning the mobile phones and gaming equipment.
+
+4. Analyse NAs as own category
+
+## Optimise MCA results (deal with less responsive categories; specific MCA)
+
+```{r mca-specific 2, include=FALSE}
+library(forcats)
+```
+
+## Check eigenvalues
+
+```{r mca-eigen 2}
+fviz_eig(res_mca_idn_2)
+
+res_mca_idn_2$eig
+
+GDAtools::modif.rate(res_mca_idn_2)
+```
+
+The extent of the expalnation is relatively spreaded out by dimensions, it requires to calculate till demension 10 till it gets to 70% of variance. However, as a result of motive rate, it reaches to 70% of expalnation by dimension two, we will focus on 2 dimensions.
+
+## Start interpretation per axis
+
+In order to enable an interpretation that is as goal-oriented as possible,
+we calculate the baseline criterion and 
+focus only on the categories that make a particularly strong contribution.
+
+```{r mca-baseline-criterion 2}
+criterion <- 100/ncol(res_mca_idn_2$call$Xtot)
+criterion
+```
+
+The value of criterion is 3.571.
+
+### Axis 1
+```{r mca-axis-1 2}
+extract_hight_ctr_cat_idn(1, criterion)
+
+fviz_mca_var(
+    res_mca_idn_2,
+    select.var = list(name = extract_hight_ctr_cat_idn(1, criterion)),
+    repel = TRUE
+) +
+    xlab("Axis 1 (54.0 %, modif. rate Benzécri): own mobile & game vs. not")
+```
+
+The result of MCA of variable categories on axis 1 for the data of Indonesia was very obvious, as it is expected in the hypothesis, there is a large gap between students regarding the possession of mobile phone and game equipment. 
+
+### Axis 2
+
+```{r mca-axis-2 2}
+extract_hight_ctr_cat_idn(2, criterion)
+
+# Our mysterios axis. What is it about?
+fviz_mca_var(
+    res_mca_idn_2,
+    select.var = list(name = extract_hight_ctr_cat_idn(2, criterion-1)),
+    repel = TRUE
+) +
+    xlab("Axis 1 (54.0 %, modif. rate Benzécri): own mobile & game vs. not") +
+    ylab("Axis 2 (16.9%, variance): like vs dislike")
+```
+
+As for the axis 2 in the data of Indonesia, it separated clearly between the students who like math/science a lot and the students who do not like math/science. The safety of the school seems related to the opinion of agreeing a lot for liking math/science. Also, level of the safeness of the school is related with the extent which students like math/science. Thus, it can be assumed that the environment in which students are studying is related with how students are motivated for studying in Indonesia. 
+
+## Analyse passive variables in depth
+
+```{r mca-passive 2}
+
+df_idn_selected %>% colnames()
+
+# Take a look at all passive varibles (active variables hidden)
+fviz_mca_var(
+    res_mca_idn_2,
+    invisible = "var"
+) +
+    xlim(-0.3, 0.6) +
+    ylim(-0.3, 0.3)
+
+# Take a look at the books at home passive variable (individuals plot)
+fviz_mca_ind(
+    res_mca_idn_2,
+    addEllipses = TRUE,
+    habillage = "sex",
+    geom.ind = "point",
+    alpha.ind = 0.5
+) +
+    # Move right on with ggplot calls.
+    facet_wrap(~"sex") +
+    coord_fixed()
+
+# Take a look at the sex of students passive variable (individuals plot)
+fviz_mca_ind(
+    res_mca_idn_2,
+    addEllipses = TRUE,
+    habillage =  "own_internet",
+    geom.ind = "point",
+    alpha.ind = 0.2
+) +
+    # Move right on with ggplot calls.
+    facet_wrap(~"own_internet") +
+    coord_fixed()
+```
+
+From the analysis on the passive variables, it was obvious that the girls posses computer and internet less than boys. And still between boys, the gap in possession is large. And from the result of passive variables of gender, the girls are having less variety of opinion than boys. However, there is no clear association between passive variables and the characteristics of axis. It seems that possession computer or internet does not related if the students are motivated for studying or not.
